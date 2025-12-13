@@ -1,0 +1,401 @@
+import GObject from 'gi://GObject';
+import St from 'gi://St';
+import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
+
+// Import GStreamer
+let Gst;
+try {
+    Gst = imports.gi.Gst;
+    Gst.init(null);
+} catch (e) {
+    log('GStreamer not available: ' + e.message);
+}
+
+export class MusicPlayer {
+    constructor(extensionPath, settings) {
+        this.extensionPath = extensionPath;
+        this.settings = settings;
+        this.player = null;
+        this.currentTrack = 0;
+        this.isPlaying = false;
+        this.isMuted = false;
+        
+        // Load settings
+        this.loopEnabled = this.settings.get_boolean('loop-enabled');
+        this.volume = this.settings.get_double('volume');
+        this.includeBundled = this.settings.get_boolean('include-bundled-song');
+        
+        // Playlist
+        this.playlist = [];
+        this.bundledSong = `file://${extensionPath}/Silent_Night.ogg`;
+        
+        // Progress tracking
+        this.duration = 0;
+        this.position = 0;
+        this.progressUpdateId = null;
+        
+        this._initPlayer();
+        this._loadPlaylist();
+    }
+    
+    _initPlayer() {
+        if (!Gst) {
+            log('Cannot initialize music player - GStreamer not available');
+            return;
+        }
+        
+        try {
+            this.player = Gst.ElementFactory.make('playbin', 'player');
+            
+            if (!this.player) {
+                log('Failed to create GStreamer playbin element');
+                return;
+            }
+            
+            this.player.set_property('volume', this.volume);
+            
+            // Connect to end-of-stream signal
+            let bus = this.player.get_bus();
+            bus.add_signal_watch();
+            bus.connect('message', (bus, message) => {
+                if (message.type === Gst.MessageType.EOS) {
+                    this._onTrackEnded();
+                } else if (message.type === Gst.MessageType.DURATION_CHANGED) {
+                    this._updateDuration();
+                }
+            });
+            
+            log('🎵 Music Player initialized successfully');
+        } catch (e) {
+            log('Error initializing music player: ' + e.message);
+        }
+    }
+    
+    _loadPlaylist() {
+        this.playlist = [];
+        
+        // Load saved playlist from settings FIRST
+        try {
+            let playlistJson = this.settings.get_string('music-playlist');
+            if (playlistJson && playlistJson !== '[]') {
+                let savedTracks = JSON.parse(playlistJson);
+                savedTracks.forEach(track => {
+                    this.playlist.push({
+                        name: track.name,
+                        uri: track.uri,
+                        enabled: track.enabled || true
+                    });
+                });
+            }
+        } catch (e) {
+            log('Error loading playlist: ' + e.message);
+        }
+        
+        // Add bundled song ONLY if not already in playlist
+        if (this.includeBundled) {
+            let hasSilentNight = this.playlist.some(track => 
+                track.uri === this.bundledSong || track.name === 'Silent Night'
+            );
+            
+            if (!hasSilentNight) {
+                // Add at beginning
+                this.playlist.unshift({
+                    name: 'Silent Night',
+                    uri: this.bundledSong,
+                    enabled: true
+                });
+            }
+        }
+        
+        log(`🎵 Playlist loaded: ${this.playlist.length} songs`);
+    }
+    
+    savePlaylist() {
+        try {
+            // Save ALL tracks (including bundled) with their enabled state
+            let allTracks = this.playlist.map(track => ({
+                name: track.name,
+                uri: track.uri,
+                enabled: track.enabled
+            }));
+            
+            let playlistJson = JSON.stringify(allTracks);
+            this.settings.set_string('music-playlist', playlistJson);
+            log('🎵 Playlist saved');
+        } catch (e) {
+            log('Error saving playlist: ' + e.message);
+        }
+    }
+    
+    _updateDuration() {
+        if (!this.player) return;
+        
+        try {
+            let [success, duration] = this.player.query_duration(Gst.Format.TIME);
+            if (success && duration > 0) {
+                this.duration = duration / Gst.SECOND;
+            } else {
+                // Duration not ready yet, will retry in progress updates
+                this.duration = 0;
+            }
+        } catch (e) {
+            // Ignore errors
+            this.duration = 0;
+        }
+    }
+    
+    _startProgressUpdates() {
+        if (this.progressUpdateId) return;
+        
+        this.progressUpdateId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
+            if (!this.isPlaying || !this.player) {
+                return GLib.SOURCE_CONTINUE;
+            }
+            
+            try {
+                // Update position
+                let [success, position] = this.player.query_position(Gst.Format.TIME);
+                if (success) {
+                    this.position = position / Gst.SECOND;
+                }
+                
+                // Keep trying to get duration if we don't have it yet
+                if (this.duration === 0) {
+                    let [dSuccess, duration] = this.player.query_duration(Gst.Format.TIME);
+                    if (dSuccess && duration > 0) {
+                        this.duration = duration / Gst.SECOND;
+                    }
+                }
+            } catch (e) {
+                // Ignore errors
+            }
+            
+            return GLib.SOURCE_CONTINUE;
+        });
+    }
+    
+    _stopProgressUpdates() {
+        if (this.progressUpdateId) {
+            GLib.source_remove(this.progressUpdateId);
+            this.progressUpdateId = null;
+        }
+        this.position = 0;
+        this.duration = 0;
+    }
+    
+    getProgress() {
+        return {
+            position: this.position,
+            duration: this.duration,
+            percentage: this.duration > 0 ? (this.position / this.duration) * 100 : 0
+        };
+    }
+    
+    _onTrackEnded() {
+        log('🎵 Track ended');
+        this._stopProgressUpdates();
+        
+        if (this.loopEnabled) {
+            this.next();
+        } else {
+            this.stop();
+        }
+    }
+    
+    play() {
+        if (!this.player || this.playlist.length === 0) {
+            log('Cannot play - no player or empty playlist');
+            return;
+        }
+        
+        try {
+            // If paused, just resume
+            if (this.isPlaying) {
+                this.player.set_state(Gst.State.PLAYING);
+                this._startProgressUpdates();
+                log('🎵 Resumed playback');
+                return;
+            }
+            
+            // Load current track
+            let track = this.playlist[this.currentTrack];
+            if (!track || !track.enabled) {
+                // Find next enabled track
+                this.currentTrack = this._findNextEnabledTrack();
+                if (this.currentTrack === -1) {
+                    log('No enabled tracks in playlist');
+                    return;
+                }
+                track = this.playlist[this.currentTrack];
+            }
+            
+            log(`🎵 Playing: ${track.name}`);
+            this.player.set_property('uri', track.uri);
+            this.player.set_state(Gst.State.PLAYING);
+            this.isPlaying = true;
+            
+            this._updateDuration();
+            this._startProgressUpdates();
+            
+        } catch (e) {
+            log('Error playing track: ' + e.message);
+        }
+    }
+    
+    pause() {
+        if (!this.player) return;
+        
+        try {
+            this.player.set_state(Gst.State.PAUSED);
+            this.isPlaying = false;
+            this._stopProgressUpdates();
+            log('🎵 Paused');
+        } catch (e) {
+            log('Error pausing: ' + e.message);
+        }
+    }
+    
+    stop() {
+        if (!this.player) return;
+        
+        try {
+            this.player.set_state(Gst.State.NULL);
+            this.isPlaying = false;
+            this._stopProgressUpdates();
+            log('🎵 Stopped');
+        } catch (e) {
+            log('Error stopping: ' + e.message);
+        }
+    }
+    
+    next() {
+        this.stop();
+        
+        let nextTrack = this._findNextEnabledTrack();
+        if (nextTrack !== -1) {
+            this.currentTrack = nextTrack;
+            this.play();
+        } else {
+            log('No next track available');
+        }
+    }
+    
+    previous() {
+        this.stop();
+        
+        let prevTrack = this._findPreviousEnabledTrack();
+        if (prevTrack !== -1) {
+            this.currentTrack = prevTrack;
+            this.play();
+        } else {
+            log('No previous track available');
+        }
+    }
+    
+    _findPreviousEnabledTrack() {
+        if (this.playlist.length === 0) return -1;
+        
+        // Start from current - 1, wrap around
+        let startIndex = this.currentTrack - 1;
+        if (startIndex < 0) startIndex = this.playlist.length - 1;
+        
+        for (let i = 0; i < this.playlist.length; i++) {
+            let index = (startIndex - i);
+            if (index < 0) index += this.playlist.length;
+            
+            if (this.playlist[index].enabled) {
+                return index;
+            }
+        }
+        
+        return -1; // No enabled tracks found
+    }
+    
+    _findNextEnabledTrack() {
+        let startIndex = (this.currentTrack + 1) % this.playlist.length;
+        
+        for (let i = 0; i < this.playlist.length; i++) {
+            let index = (startIndex + i) % this.playlist.length;
+            if (this.playlist[index].enabled) {
+                return index;
+            }
+        }
+        
+        return -1; // No enabled tracks found
+    }
+    
+    toggleMute() {
+        if (!this.player) return;
+        
+        this.isMuted = !this.isMuted;
+        
+        try {
+            if (this.isMuted) {
+                this.player.set_property('volume', 0.0);
+                log('🎵 Muted');
+            } else {
+                this.player.set_property('volume', this.volume);
+                log('🎵 Unmuted');
+            }
+        } catch (e) {
+            log('Error toggling mute: ' + e.message);
+        }
+    }
+    
+    toggleLoop() {
+        this.loopEnabled = !this.loopEnabled;
+        this.settings.set_boolean('loop-enabled', this.loopEnabled);
+        log(`🎵 Loop: ${this.loopEnabled ? 'ON' : 'OFF'}`);
+    }
+    
+    setVolume(volume) {
+        this.volume = Math.max(0.0, Math.min(1.0, volume));
+        this.settings.set_double('volume', this.volume);
+        
+        if (!this.isMuted && this.player) {
+            try {
+                this.player.set_property('volume', this.volume);
+            } catch (e) {
+                log('Error setting volume: ' + e.message);
+            }
+        }
+    }
+    
+    removeTrack(index) {
+        if (index < 0 || index >= this.playlist.length) return;
+        
+        log(`🎵 Removing: ${this.playlist[index].name}`);
+        this.playlist.splice(index, 1);
+        
+        // Adjust current track index if needed
+        if (this.currentTrack >= index) {
+            this.currentTrack = Math.max(0, this.currentTrack - 1);
+        }
+        
+        this.savePlaylist();
+    }
+    
+    getCurrentTrackName() {
+        if (this.playlist.length === 0) return 'No tracks';
+        if (this.currentTrack >= this.playlist.length) return 'Unknown';
+        
+        return this.playlist[this.currentTrack].name;
+    }
+    
+    destroy() {
+        this._stopProgressUpdates();
+        
+        if (this.player) {
+            try {
+                this.player.set_state(Gst.State.NULL);
+            } catch (e) {
+                log('Error destroying player: ' + e.message);
+            }
+            this.player = null;
+        }
+        
+        log('🎵 Music Player destroyed');
+    }
+}

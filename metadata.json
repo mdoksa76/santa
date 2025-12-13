@@ -1,0 +1,14 @@
+{
+  "uuid": "santa@mdoksa76.github.com",
+  "name": "Christmas extension",
+  "description": "Christams extension inspired by xsnow",
+  "shell-version": [
+    "45",
+    "46",
+    "47",
+    "48"
+  ],
+  "version": 1,
+  "url": "",
+  "settings-schema": "org.gnome.shell.extensions.santa"
+}

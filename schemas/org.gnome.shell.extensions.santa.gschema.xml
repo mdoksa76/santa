@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.santa" path="/org/gnome/shell/extensions/santa@mdoksa76.github.com/">
+    
+    <key name="music-playlist" type="s">
+      <default>'[]'</default>
+      <summary>Music playlist</summary>
+      <description>JSON array of music tracks with name, uri, and enabled status</description>
+    </key>
+    
+    <key name="include-bundled-song" type="b">
+      <default>true</default>
+      <summary>Include bundled Silent Night</summary>
+      <description>Whether to include the bundled Silent Night song in playlist</description>
+    </key>
+    
+    <key name="loop-enabled" type="b">
+      <default>true</default>
+      <summary>Loop playlist</summary>
+      <description>Loop through playlist continuously</description>
+    </key>
+    
+    <key name="volume" type="d">
+      <default>0.5</default>
+      <summary>Volume level</summary>
+      <description>Volume level from 0.0 to 1.0</description>
+    </key>
+    
+  </schema>
+</schemalist>
