@@ -14,16 +14,13 @@ export class MusicPlayer {
         this.isPlaying = false;
         this.isMuted = false;
         
-        // Load settings
         this.loopEnabled = this.settings.get_boolean('loop-enabled');
         this.volume = this.settings.get_double('volume');
         this.includeBundled = this.settings.get_boolean('include-bundled-song');
         
-        // Playlist
         this.playlist = [];
         this.bundledSong = `file://${extensionPath}/Silent_Night.ogg`;
         
-        // Progress tracking
         this.duration = 0;
         this.position = 0;
         this.progressUpdateId = null;
@@ -33,66 +30,53 @@ export class MusicPlayer {
     }
     
     _initPlayer() {
-        try {
-            // Point 6: Check if Gst is initialized before calling init
-            if (!Gst.is_initialized()) {
-                Gst.init(null);
-            }
-            
-            this.player = Gst.ElementFactory.make('playbin', 'player');
-            
-            if (!this.player) {
-                console.error('Failed to create GStreamer playbin element');
-                return;
-            }
-            
-            this.player.set_property('volume', this.volume);
-            
-            // Connect to end-of-stream signal
-            let bus = this.player.get_bus();
-            bus.add_signal_watch();
-            bus.connect('message', (bus, message) => {
-                if (message.type === Gst.MessageType.EOS) {
-                    this._onTrackEnded();
-                } else if (message.type === Gst.MessageType.DURATION_CHANGED) {
-                    this._updateDuration();
-                }
-            });
-            
-            console.debug('🎵 Music Player initialized successfully');
-        } catch (e) {
-            console.error(`Error initializing music player: ${e.message}`);
+        if (!Gst.is_initialized()) {
+            Gst.init(null);
         }
+        
+        this.player = Gst.ElementFactory.make('playbin', 'player');
+        
+        if (!this.player) {
+            console.error('Failed to create GStreamer playbin element');
+            return;
+        }
+        
+        this.player.set_property('volume', this.volume);
+        
+        let bus = this.player.get_bus();
+        bus.add_signal_watch();
+        bus.connect('message', (bus, message) => {
+            if (message.type === Gst.MessageType.EOS) {
+                this._onTrackEnded();
+            } else if (message.type === Gst.MessageType.DURATION_CHANGED) {
+                this._updateDuration();
+            }
+        });
+        
+        console.debug('Music Player initialized successfully');
     }
     
     _loadPlaylist() {
         this.playlist = [];
         
-        // Load saved playlist from settings FIRST
-        try {
-            let playlistJson = this.settings.get_string('music-playlist');
-            if (playlistJson && playlistJson !== '[]') {
-                let savedTracks = JSON.parse(playlistJson);
-                savedTracks.forEach(track => {
-                    this.playlist.push({
-                        name: track.name,
-                        uri: track.uri,
-                        enabled: track.enabled || true
-                    });
+        let playlistJson = this.settings.get_string('music-playlist');
+        if (playlistJson && playlistJson !== '[]') {
+            let savedTracks = JSON.parse(playlistJson);
+            savedTracks.forEach(track => {
+                this.playlist.push({
+                    name: track.name,
+                    uri: track.uri,
+                    enabled: track.enabled || true
                 });
-            }
-        } catch (e) {
-            console.error(`Error loading playlist: ${e.message}`);
+            });
         }
         
-        // Add bundled song ONLY if not already in playlist
         if (this.includeBundled) {
             let hasSilentNight = this.playlist.some(track => 
                 track.uri === this.bundledSong || track.name === 'Silent Night'
             );
             
             if (!hasSilentNight) {
-                // Add at beginning
                 this.playlist.unshift({
                     name: 'Silent Night',
                     uri: this.bundledSong,
@@ -101,39 +85,28 @@ export class MusicPlayer {
             }
         }
         
-        console.debug(`🎵 Playlist loaded: ${this.playlist.length} songs`);
+        console.debug(`Playlist loaded: ${this.playlist.length} songs`);
     }
     
     savePlaylist() {
-        try {
-            // Save ALL tracks (including bundled) with their enabled state
-            let allTracks = this.playlist.map(track => ({
-                name: track.name,
-                uri: track.uri,
-                enabled: track.enabled
-            }));
-            
-            let playlistJson = JSON.stringify(allTracks);
-            this.settings.set_string('music-playlist', playlistJson);
-            console.debug('🎵 Playlist saved');
-        } catch (e) {
-            console.error(`Error saving playlist: ${e.message}`);
-        }
+        let allTracks = this.playlist.map(track => ({
+            name: track.name,
+            uri: track.uri,
+            enabled: track.enabled
+        }));
+        
+        let playlistJson = JSON.stringify(allTracks);
+        this.settings.set_string('music-playlist', playlistJson);
+        console.debug('Playlist saved');
     }
     
     _updateDuration() {
         if (!this.player) return;
         
-        try {
-            let [success, duration] = this.player.query_duration(Gst.Format.TIME);
-            if (success && duration > 0) {
-                this.duration = duration / Gst.SECOND;
-            } else {
-                // Duration not ready yet, will retry in progress updates
-                this.duration = 0;
-            }
-        } catch (e) {
-            // Ignore errors
+        let [success, duration] = this.player.query_duration(Gst.Format.TIME);
+        if (success && duration > 0) {
+            this.duration = duration / Gst.SECOND;
+        } else {
             this.duration = 0;
         }
     }
@@ -146,22 +119,16 @@ export class MusicPlayer {
                 return GLib.SOURCE_CONTINUE;
             }
             
-            try {
-                // Update position
-                let [success, position] = this.player.query_position(Gst.Format.TIME);
-                if (success) {
-                    this.position = position / Gst.SECOND;
+            let [success, position] = this.player.query_position(Gst.Format.TIME);
+            if (success) {
+                this.position = position / Gst.SECOND;
+            }
+            
+            if (this.duration === 0) {
+                let [dSuccess, duration] = this.player.query_duration(Gst.Format.TIME);
+                if (dSuccess && duration > 0) {
+                    this.duration = duration / Gst.SECOND;
                 }
-                
-                // Keep trying to get duration if we don't have it yet
-                if (this.duration === 0) {
-                    let [dSuccess, duration] = this.player.query_duration(Gst.Format.TIME);
-                    if (dSuccess && duration > 0) {
-                        this.duration = duration / Gst.SECOND;
-                    }
-                }
-            } catch (e) {
-                // Ignore errors
             }
             
             return GLib.SOURCE_CONTINUE;
@@ -186,7 +153,7 @@ export class MusicPlayer {
     }
     
     _onTrackEnded() {
-        console.debug('🎵 Track ended');
+        console.debug('Track ended');
         this._stopProgressUpdates();
         
         if (this.loopEnabled) {
@@ -202,64 +169,48 @@ export class MusicPlayer {
             return;
         }
         
-        try {
-            // If paused, just resume
-            if (this.isPlaying) {
-                this.player.set_state(Gst.State.PLAYING);
-                this._startProgressUpdates();
-                console.debug('🎵 Resumed playback');
+        if (this.isPlaying) {
+            this.player.set_state(Gst.State.PLAYING);
+            this._startProgressUpdates();
+            console.debug('Resumed playback');
+            return;
+        }
+        
+        let track = this.playlist[this.currentTrack];
+        if (!track || !track.enabled) {
+            this.currentTrack = this._findNextEnabledTrack();
+            if (this.currentTrack === -1) {
+                console.debug('No enabled tracks in playlist');
                 return;
             }
-            
-            // Load current track
-            let track = this.playlist[this.currentTrack];
-            if (!track || !track.enabled) {
-                // Find next enabled track
-                this.currentTrack = this._findNextEnabledTrack();
-                if (this.currentTrack === -1) {
-                    console.debug('No enabled tracks in playlist');
-                    return;
-                }
-                track = this.playlist[this.currentTrack];
-            }
-            
-            console.debug(`🎵 Playing: ${track.name}`);
-            this.player.set_property('uri', track.uri);
-            this.player.set_state(Gst.State.PLAYING);
-            this.isPlaying = true;
-            
-            this._updateDuration();
-            this._startProgressUpdates();
-            
-        } catch (e) {
-            console.error(`Error playing track: ${e.message}`);
+            track = this.playlist[this.currentTrack];
         }
+        
+        console.debug(`Playing: ${track.name}`);
+        this.player.set_property('uri', track.uri);
+        this.player.set_state(Gst.State.PLAYING);
+        this.isPlaying = true;
+        
+        this._updateDuration();
+        this._startProgressUpdates();
     }
     
     pause() {
         if (!this.player) return;
         
-        try {
-            this.player.set_state(Gst.State.PAUSED);
-            this.isPlaying = false;
-            this._stopProgressUpdates();
-            console.debug('🎵 Paused');
-        } catch (e) {
-            console.error(`Error pausing: ${e.message}`);
-        }
+        this.player.set_state(Gst.State.PAUSED);
+        this.isPlaying = false;
+        this._stopProgressUpdates();
+        console.debug('Paused');
     }
     
     stop() {
         if (!this.player) return;
         
-        try {
-            this.player.set_state(Gst.State.NULL);
-            this.isPlaying = false;
-            this._stopProgressUpdates();
-            console.debug('🎵 Stopped');
-        } catch (e) {
-            console.error(`Error stopping: ${e.message}`);
-        }
+        this.player.set_state(Gst.State.NULL);
+        this.isPlaying = false;
+        this._stopProgressUpdates();
+        console.debug('Stopped');
     }
     
     next() {
@@ -289,7 +240,6 @@ export class MusicPlayer {
     _findPreviousEnabledTrack() {
         if (this.playlist.length === 0) return -1;
         
-        // Start from current - 1, wrap around
         let startIndex = this.currentTrack - 1;
         if (startIndex < 0) startIndex = this.playlist.length - 1;
         
@@ -302,7 +252,7 @@ export class MusicPlayer {
             }
         }
         
-        return -1; // No enabled tracks found
+        return -1;
     }
     
     _findNextEnabledTrack() {
@@ -315,7 +265,7 @@ export class MusicPlayer {
             }
         }
         
-        return -1; // No enabled tracks found
+        return -1;
     }
     
     toggleMute() {
@@ -323,23 +273,19 @@ export class MusicPlayer {
         
         this.isMuted = !this.isMuted;
         
-        try {
-            if (this.isMuted) {
-                this.player.set_property('volume', 0.0);
-                console.debug('🎵 Muted');
-            } else {
-                this.player.set_property('volume', this.volume);
-                console.debug('🎵 Unmuted');
-            }
-        } catch (e) {
-            console.error(`Error toggling mute: ${e.message}`);
+        if (this.isMuted) {
+            this.player.set_property('volume', 0.0);
+            console.debug('Muted');
+        } else {
+            this.player.set_property('volume', this.volume);
+            console.debug('Unmuted');
         }
     }
     
     toggleLoop() {
         this.loopEnabled = !this.loopEnabled;
         this.settings.set_boolean('loop-enabled', this.loopEnabled);
-        console.debug(`🎵 Loop: ${this.loopEnabled ? 'ON' : 'OFF'}`);
+        console.debug(`Loop: ${this.loopEnabled ? 'ON' : 'OFF'}`);
     }
     
     setVolume(volume) {
@@ -347,21 +293,16 @@ export class MusicPlayer {
         this.settings.set_double('volume', this.volume);
         
         if (!this.isMuted && this.player) {
-            try {
-                this.player.set_property('volume', this.volume);
-            } catch (e) {
-                console.error(`Error setting volume: ${e.message}`);
-            }
+            this.player.set_property('volume', this.volume);
         }
     }
     
     removeTrack(index) {
         if (index < 0 || index >= this.playlist.length) return;
         
-        console.debug(`🎵 Removing: ${this.playlist[index].name}`);
+        console.debug(`Removing: ${this.playlist[index].name}`);
         this.playlist.splice(index, 1);
         
-        // Adjust current track index if needed
         if (this.currentTrack >= index) {
             this.currentTrack = Math.max(0, this.currentTrack - 1);
         }
@@ -380,14 +321,10 @@ export class MusicPlayer {
         this._stopProgressUpdates();
         
         if (this.player) {
-            try {
-                this.player.set_state(Gst.State.NULL);
-            } catch (e) {
-                console.error(`Error destroying player: ${e.message}`);
-            }
+            this.player.set_state(Gst.State.NULL);
             this.player = null;
         }
         
-        console.debug('🎵 Music Player destroyed');
+        console.debug('Music Player destroyed');
     }
 }

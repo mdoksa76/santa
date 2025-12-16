@@ -6,14 +6,12 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
-// Import klasa iz classes/ foldera
 import {Snowflake} from './classes/snowflake.js';
 import {ChristmasLightsCanvas} from './classes/lights.js';
 import {SantaSleigh} from './classes/santa.js';
 import {MusicPlayer} from './classes/musicPlayer.js';
 import {MusicIndicator} from './classes/musicIndicator.js';
 
-// Panel indicator for quick toggle
 const SnowIndicator = GObject.registerClass(
 class SnowIndicator extends PanelMenu.Button {
     _init(extension) {
@@ -51,21 +49,12 @@ export default class XmasSnowExtension extends Extension {
         this._container = null;
         this._snowflakes = null;
         this._santaSleigh = null;
-        this._rocket = null;
-        this._ufo = null;
-        this._fireworksShow = null;
         this._lightsCanvas = null;
-        this._aurora = null;
-        this._giftManager = null;
         this._timeoutId = null;
         
-        // Get settings
         this._settings = this.getSettings();
-        
-        // Initialize music player with settings
         this._musicPlayer = new MusicPlayer(this.path, this._settings);
         
-        // Add indicators to panel
         this._indicator = new SnowIndicator(this);
         Main.panel.addToStatusArea('christmas-snow-indicator', this._indicator);
         
@@ -104,7 +93,6 @@ export default class XmasSnowExtension extends Extension {
         this._patternTimer = 0;
         this._patternDuration = 600;
         
-        // Create snowflakes
         this._snowflakes = [];
         const snowflakeCount = 50;
         
@@ -118,7 +106,6 @@ export default class XmasSnowExtension extends Extension {
         this._santaSleigh = new SantaSleigh(containerWidth, containerHeight, this.path);
         this._container.add_child(this._santaSleigh.actor);
         
-        // Remove old timeout before creating new one (Point 4)
         if (this._timeoutId) {
             GLib.source_remove(this._timeoutId);
             this._timeoutId = null;
@@ -188,11 +175,6 @@ export default class XmasSnowExtension extends Extension {
             this._santaSleigh = null;
         }
         
-        if (this._giftManager) {
-            this._giftManager.destroy();
-            this._giftManager = null;
-        }
-        
         if (this._container) {
             Main.layoutManager.removeChrome(this._container);
             this._container.destroy();
@@ -238,7 +220,6 @@ export default class XmasSnowExtension extends Extension {
             this._indicator = null;
         }
         
-        // Point 3: Null out settings
         this._settings = null;
     }
 }
