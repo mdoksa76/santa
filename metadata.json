@@ -1,14 +1,15 @@
 {
   "uuid": "santa@mdoksa76.github.com",
-  "name": "Christmas extension",
-  "description": "Christams extension inspired by xsnow",
+  "name": "Christmas Extension",
+  "description": "Animated Christmas decorations with snowflakes, lights, Santa's sleigh, and music. Requires zenity for dialogs.",
+  "version": 2,
   "shell-version": [
     "45",
     "46",
     "47",
-    "48"
+    "48",
+    "49"
   ],
-  "version": 1,
-  "url": "",
+  "url": "https://github.com/mdoksa76/santa",
   "settings-schema": "org.gnome.shell.extensions.santa"
 }

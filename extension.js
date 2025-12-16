@@ -118,6 +118,12 @@ export default class XmasSnowExtension extends Extension {
         this._santaSleigh = new SantaSleigh(containerWidth, containerHeight, this.path);
         this._container.add_child(this._santaSleigh.actor);
         
+        // Remove old timeout before creating new one (Point 4)
+        if (this._timeoutId) {
+            GLib.source_remove(this._timeoutId);
+            this._timeoutId = null;
+        }
+        
         this._timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 50, () => {
             if (this._isAnimating) {
                 this._patternPhase += 1;
@@ -231,5 +237,8 @@ export default class XmasSnowExtension extends Extension {
             this._indicator.destroy();
             this._indicator = null;
         }
+        
+        // Point 3: Null out settings
+        this._settings = null;
     }
 }

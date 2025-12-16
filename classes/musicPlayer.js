@@ -3,15 +3,7 @@ import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
-
-// Import GStreamer
-let Gst;
-try {
-    Gst = imports.gi.Gst;
-    Gst.init(null);
-} catch (e) {
-    log('GStreamer not available: ' + e.message);
-}
+import Gst from 'gi://Gst';
 
 export class MusicPlayer {
     constructor(extensionPath, settings) {
@@ -41,16 +33,16 @@ export class MusicPlayer {
     }
     
     _initPlayer() {
-        if (!Gst) {
-            log('Cannot initialize music player - GStreamer not available');
-            return;
-        }
-        
         try {
+            // Point 6: Check if Gst is initialized before calling init
+            if (!Gst.is_initialized()) {
+                Gst.init(null);
+            }
+            
             this.player = Gst.ElementFactory.make('playbin', 'player');
             
             if (!this.player) {
-                log('Failed to create GStreamer playbin element');
+                console.error('Failed to create GStreamer playbin element');
                 return;
             }
             
@@ -67,9 +59,9 @@ export class MusicPlayer {
                 }
             });
             
-            log('🎵 Music Player initialized successfully');
+            console.debug('🎵 Music Player initialized successfully');
         } catch (e) {
-            log('Error initializing music player: ' + e.message);
+            console.error(`Error initializing music player: ${e.message}`);
         }
     }
     
@@ -90,7 +82,7 @@ export class MusicPlayer {
                 });
             }
         } catch (e) {
-            log('Error loading playlist: ' + e.message);
+            console.error(`Error loading playlist: ${e.message}`);
         }
         
         // Add bundled song ONLY if not already in playlist
@@ -109,7 +101,7 @@ export class MusicPlayer {
             }
         }
         
-        log(`🎵 Playlist loaded: ${this.playlist.length} songs`);
+        console.debug(`🎵 Playlist loaded: ${this.playlist.length} songs`);
     }
     
     savePlaylist() {
@@ -123,9 +115,9 @@ export class MusicPlayer {
             
             let playlistJson = JSON.stringify(allTracks);
             this.settings.set_string('music-playlist', playlistJson);
-            log('🎵 Playlist saved');
+            console.debug('🎵 Playlist saved');
         } catch (e) {
-            log('Error saving playlist: ' + e.message);
+            console.error(`Error saving playlist: ${e.message}`);
         }
     }
     
@@ -194,7 +186,7 @@ export class MusicPlayer {
     }
     
     _onTrackEnded() {
-        log('🎵 Track ended');
+        console.debug('🎵 Track ended');
         this._stopProgressUpdates();
         
         if (this.loopEnabled) {
@@ -206,7 +198,7 @@ export class MusicPlayer {
     
     play() {
         if (!this.player || this.playlist.length === 0) {
-            log('Cannot play - no player or empty playlist');
+            console.debug('Cannot play - no player or empty playlist');
             return;
         }
         
@@ -215,7 +207,7 @@ export class MusicPlayer {
             if (this.isPlaying) {
                 this.player.set_state(Gst.State.PLAYING);
                 this._startProgressUpdates();
-                log('🎵 Resumed playback');
+                console.debug('🎵 Resumed playback');
                 return;
             }
             
@@ -225,13 +217,13 @@ export class MusicPlayer {
                 // Find next enabled track
                 this.currentTrack = this._findNextEnabledTrack();
                 if (this.currentTrack === -1) {
-                    log('No enabled tracks in playlist');
+                    console.debug('No enabled tracks in playlist');
                     return;
                 }
                 track = this.playlist[this.currentTrack];
             }
             
-            log(`🎵 Playing: ${track.name}`);
+            console.debug(`🎵 Playing: ${track.name}`);
             this.player.set_property('uri', track.uri);
             this.player.set_state(Gst.State.PLAYING);
             this.isPlaying = true;
@@ -240,7 +232,7 @@ export class MusicPlayer {
             this._startProgressUpdates();
             
         } catch (e) {
-            log('Error playing track: ' + e.message);
+            console.error(`Error playing track: ${e.message}`);
         }
     }
     
@@ -251,9 +243,9 @@ export class MusicPlayer {
             this.player.set_state(Gst.State.PAUSED);
             this.isPlaying = false;
             this._stopProgressUpdates();
-            log('🎵 Paused');
+            console.debug('🎵 Paused');
         } catch (e) {
-            log('Error pausing: ' + e.message);
+            console.error(`Error pausing: ${e.message}`);
         }
     }
     
@@ -264,9 +256,9 @@ export class MusicPlayer {
             this.player.set_state(Gst.State.NULL);
             this.isPlaying = false;
             this._stopProgressUpdates();
-            log('🎵 Stopped');
+            console.debug('🎵 Stopped');
         } catch (e) {
-            log('Error stopping: ' + e.message);
+            console.error(`Error stopping: ${e.message}`);
         }
     }
     
@@ -278,7 +270,7 @@ export class MusicPlayer {
             this.currentTrack = nextTrack;
             this.play();
         } else {
-            log('No next track available');
+            console.debug('No next track available');
         }
     }
     
@@ -290,7 +282,7 @@ export class MusicPlayer {
             this.currentTrack = prevTrack;
             this.play();
         } else {
-            log('No previous track available');
+            console.debug('No previous track available');
         }
     }
     
@@ -334,20 +326,20 @@ export class MusicPlayer {
         try {
             if (this.isMuted) {
                 this.player.set_property('volume', 0.0);
-                log('🎵 Muted');
+                console.debug('🎵 Muted');
             } else {
                 this.player.set_property('volume', this.volume);
-                log('🎵 Unmuted');
+                console.debug('🎵 Unmuted');
             }
         } catch (e) {
-            log('Error toggling mute: ' + e.message);
+            console.error(`Error toggling mute: ${e.message}`);
         }
     }
     
     toggleLoop() {
         this.loopEnabled = !this.loopEnabled;
         this.settings.set_boolean('loop-enabled', this.loopEnabled);
-        log(`🎵 Loop: ${this.loopEnabled ? 'ON' : 'OFF'}`);
+        console.debug(`🎵 Loop: ${this.loopEnabled ? 'ON' : 'OFF'}`);
     }
     
     setVolume(volume) {
@@ -358,7 +350,7 @@ export class MusicPlayer {
             try {
                 this.player.set_property('volume', this.volume);
             } catch (e) {
-                log('Error setting volume: ' + e.message);
+                console.error(`Error setting volume: ${e.message}`);
             }
         }
     }
@@ -366,7 +358,7 @@ export class MusicPlayer {
     removeTrack(index) {
         if (index < 0 || index >= this.playlist.length) return;
         
-        log(`🎵 Removing: ${this.playlist[index].name}`);
+        console.debug(`🎵 Removing: ${this.playlist[index].name}`);
         this.playlist.splice(index, 1);
         
         // Adjust current track index if needed
@@ -391,11 +383,11 @@ export class MusicPlayer {
             try {
                 this.player.set_state(Gst.State.NULL);
             } catch (e) {
-                log('Error destroying player: ' + e.message);
+                console.error(`Error destroying player: ${e.message}`);
             }
             this.player = null;
         }
         
-        log('🎵 Music Player destroyed');
+        console.debug('🎵 Music Player destroyed');
     }
 }
