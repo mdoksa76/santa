@@ -155,12 +155,40 @@ export class MusicPlayer {
     _onTrackEnded() {
         console.debug('Track ended');
         this._stopProgressUpdates();
-        
-        if (this.loopEnabled) {
-            this.next();
+
+        // Iduća omogućena pjesma BEZ omatanja (do kraja playliste)
+        let nextTrack = this._findNextEnabledNoWrap();
+
+        // Kraj playliste: ako je Loop ON, kreni ispočetka; inače stani
+        if (nextTrack === -1 && this.loopEnabled) {
+            nextTrack = this._findFirstEnabledTrack();
+        }
+
+        if (nextTrack !== -1) {
+            this.stop();
+            this.currentTrack = nextTrack;
+            this.play();
         } else {
             this.stop();
         }
+    }
+
+    _findNextEnabledNoWrap() {
+        for (let i = this.currentTrack + 1; i < this.playlist.length; i++) {
+            if (this.playlist[i].enabled) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    _findFirstEnabledTrack() {
+        for (let i = 0; i < this.playlist.length; i++) {
+            if (this.playlist[i].enabled) {
+                return i;
+            }
+        }
+        return -1;
     }
     
     play() {
